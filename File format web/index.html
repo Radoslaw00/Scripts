@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analizator Plików - File Drop Analyzer</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="background-container">
+        <img src="123.jpg" alt="background" class="background-image">
+    </div>
+
+    <div class="container">
+        <div class="content">
+            <header>
+                <h1>Analizator Plików</h1>
+                <p class="subtitle">File Drop Analyzer</p>
+            </header>
+
+            <div class="drop-zone" id="dropZone">
+                <div class="drop-icon">📁</div>
+                <h2>Upuść pliki tutaj</h2>
+                <p>Drop files here</p>
+                <p class="drop-hint">lub kliknij aby wybrać | or click to select</p>
+                <input type="file" id="fileInput" multiple hidden>
+            </div>
+
+            <div class="results-container" id="resultsContainer" style="display: none;">
+                <div class="results-content">
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-label">Łącznie plików / Total Files</div>
+                            <div class="stat-value" id="totalFiles">0</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Typy plików / File Types</div>
+                            <div class="stat-value" id="fileTypes">0</div>
+                        </div>
+                    </div>
+
+                    <div class="file-types-section">
+                        <h3>Rodzaje plików / File Types</h3>
+                        <div class="file-types-grid" id="fileTypesGrid"></div>
+                    </div>
+
+                    <div class="files-list-section">
+                        <h3>Nazwy plików / File Names</h3>
+                        <div class="files-list" id="filesList"></div>
+                    </div>
+
+                    <button class="reset-button" id="resetButton">Wyczyść / Clear</button>
+                </div>
+            </div>
+
+            <div class="empty-state" id="emptyState">
+                <p class="empty-message">Czekanie na pliki... / Waiting for files...</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
