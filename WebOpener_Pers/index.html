@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Opener - Your Gateway to the Web 🌐</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="glass-card center-content">
+            <h1 class="title">🌐 Web Opener</h1>
+            <p class="subtitle">What would you like to explore today?</p>
+            
+            <div class="button-grid">
+                <a href="sites.html" class="btn btn-primary">
+                    <span class="btn-emoji">🌍</span>
+                    <span class="btn-text">Sites</span>
+                </a>
+                <a href="games.html" class="btn btn-secondary">
+                    <span class="btn-emoji">🎮</span>
+                    <span class="btn-text">Games</span>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats Tracker -->
+    <div id="statsTracker">Games opened: 0 times | Sites opened: 0 times</div>
+
+    <script src="tracker.js"></script>
+    <script src="animations.js"></script>
+    <script src="utils.js"></script>
+    <script>
+        // Initialize tracker display on page load
+        window.addEventListener('load', () => {
+            tracker.updateDisplay();
+        });
+    </script>
+</body>
+</html>
