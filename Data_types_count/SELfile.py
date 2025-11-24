@@ -1,3 +1,4 @@
+
 import os
 import sys
 import time
@@ -6,6 +7,17 @@ import random
 import string
 import threading
 import concurrent.futures
+import msvcrt # Added for kbhit/getch on Windows
+
+# ANSI Colors
+CYAN = "\033[96m"
+GREEN = "\033[92m"
+RED = "\033[91m"
+YELLOW = "\033[93m"
+PURPLE = "\033[95m"
+WHITE = "\033[97m"
+BLUE = "\033[94m"
+RESET = "\033[0m"
 
 # Global stats container
 stats = {
@@ -18,6 +30,13 @@ stats = {
 stats_lock = threading.Lock()
 
 stop_animation = False
+
+def get_terminal_width():
+    try:
+        columns, _ = shutil.get_terminal_size()
+        return columns
+    except:
+        return 80
 
 def get_drives():
     """Returns a list of available drive letters (e.g., ['C:\\', 'D:\\'])."""
@@ -56,6 +75,8 @@ def animation_thread():
     chars = string.ascii_letters + string.digits + "!@#$%^&*()_+-=[]{}|;:,.<>?"
     
     while not stop_animation:
+        term_width = get_terminal_width()
+        
         # Calculate percentage
         with stats_lock:
             s_bytes = stats["scanned_bytes"]
@@ -69,17 +90,23 @@ def animation_thread():
         else:
             pct = 0
             
-        deco = "".join(random.choices(chars, k=15))
+        deco = "".join(random.choices(chars, k=10))
         
         bar_len = 20
         filled = int(bar_len * pct / 100)
-        bar = "█" * filled + "-" * (bar_len - filled)
+        bar = f"{GREEN}{'█' * filled}{RESET}{' ' * (bar_len - filled)}"
         
         # Format numbers
         files_str = format_number(n_files)
         folders_str = format_number(n_folders)
         
-        sys.stdout.write(f"\r[{bar}] {pct:6.2f}% | {deco} | Files: {files_str} | Folders: {folders_str}   ")
+        status_line = f"[{bar}] {pct:6.2f}% | {CYAN}{deco}{RESET} | Files: {YELLOW}{files_str}{RESET} | Folders: {PURPLE}{folders_str}{RESET}"
+        
+        # Center the line
+        clean_line = f"[{'█' * filled}{' ' * (bar_len - filled)}] {pct:6.2f}% | {deco} | Files: {files_str} | Folders: {folders_str}"
+        padding = max(0, (term_width - len(clean_line)) // 2)
+        
+        sys.stdout.write(f"\r{' ' * padding}{status_line}   ")
         sys.stdout.flush()
         time.sleep(0.08)
 
@@ -124,37 +151,71 @@ def main():
     global stop_animation
     
     os.system('cls' if os.name == 'nt' else 'clear')
-    print("Initializing Drive Selector...")
+    os.system("") # Enable ANSI
     
+    term_width = get_terminal_width()
+    try:
+        _, term_height = shutil.get_terminal_size()
+    except:
+        term_height = 24
+        
+    width = 60
+    # Height depends on number of drives, let's approximate or calc dynamically
     drives = get_drives()
+    height = 6 + len(drives) + 2 
     
-    print("\nAvailable Drives:")
+    margin = " " * ((term_width - width) // 2)
+    top_margin = max(0, (term_height - height) // 2)
+    
+    print("\n" * top_margin)
+    print(f"{margin}{CYAN}Initializing Drive Selector...{RESET}")
+    
+    # drives = get_drives() # Already called above
+    
+    print(f"\n{margin}{CYAN}╔{'═' * (width - 2)}╗{RESET}")
+    print(f"{margin}{CYAN}║{RESET}{' ' * ((width - 2 - 16)//2)}{GREEN}AVAILABLE DRIVES{RESET}{' ' * ((width - 2 - 16 + 1)//2)}{CYAN}║{RESET}")
+    print(f"{margin}{CYAN}╠{'═' * (width - 2)}╣{RESET}")
+    
     for i, d in enumerate(drives):
         try:
             usage = shutil.disk_usage(d)
             total_gb = usage.total / (1024**3)
             free_gb = usage.free / (1024**3)
-            print(f"{i+1}. {d}  (Total: {total_gb:.1f} GB, Free: {free_gb:.1f} GB)")
+            line = f"{i+1}. {d}  (Total: {total_gb:.1f} GB, Free: {free_gb:.1f} GB)"
         except:
-            print(f"{i+1}. {d}")
+            line = f"{i+1}. {d}"
             
-    print("\n")
+        # Center the line content roughly or left align with padding
+        # Let's left align inside the box
+        content_len = len(line)
+        padding = width - 4 - content_len
+        if padding < 0: 
+            line = line[:width-5] + "..."
+            padding = 0
+            
+        print(f"{margin}{CYAN}║{RESET} {WHITE}{line}{RESET}{' ' * padding} {CYAN}║{RESET}")
+            
+    print(f"{margin}{CYAN}╚{'═' * (width - 2)}╝{RESET}")
+    
     selected_drive = None
     while True:
-        choice = input("Select a drive number to scan: ").strip()
+        print(f"\n{margin}Select a drive number to scan (or X to return): ", end='')
+        choice = input().strip()
+        if choice.lower() == 'x':
+            return # Return to ALL.py
         if choice.isdigit():
             idx = int(choice) - 1
             if 0 <= idx < len(drives):
                 selected_drive = drives[idx]
                 break
-        print("Invalid selection. Try again.")
+        print(f"{margin}{RED}Invalid selection. Try again.{RESET}")
 
     # Setup stats for the single drive
     stats["total_bytes"] = get_total_used_space([selected_drive])
     
-    print(f"\nPreparing to scan: {selected_drive}")
-    print(f"Total Data to Scan: {stats['total_bytes'] / (1024**3):.2f} GB")
-    print("Starting Parallel Scan...")
+    print(f"\n{margin}Preparing to scan: {GREEN}{selected_drive}{RESET}")
+    print(f"{margin}Total Data to Scan: {YELLOW}{stats['total_bytes'] / (1024**3):.2f} GB{RESET}")
+    print(f"{margin}Starting Parallel Scan...")
     time.sleep(1.5)
     
     t = threading.Thread(target=animation_thread)
@@ -194,31 +255,51 @@ def main():
     duration = time.time() - start_time
     
     os.system('cls' if os.name == 'nt' else 'clear')
-    print("="*50)
-    print(f"              SCAN COMPLETE: {selected_drive}")
-    print("="*50)
-    print(f"Time Elapsed:        {duration:.2f} seconds")
-    print(f"Total Folders:       {format_number(stats['folders'])}")
-    print(f"Total Files:         {format_number(stats['files'])}")
-    print(f"Total Data Scanned:  {stats['scanned_bytes'] / (1024**3):.2f} GB")
-    print("-" * 50)
-    print("File Formats Breakdown:")
+    
+    # Final Report
+    term_width = get_terminal_width()
+    width = 60
+    margin = " " * ((term_width - width) // 2)
+    
+    print("")
+    print(f"{margin}{CYAN}╔{'═' * (width - 2)}╗{RESET}")
+    print(f"{margin}{CYAN}║{RESET}{' ' * ((width - 2 - 20)//2)}{GREEN}SCAN COMPLETE: {selected_drive}{RESET}{' ' * ((width - 2 - 20 - len(selected_drive) + 1)//2)}{CYAN}║{RESET}") 
+    # Note: centering math above is approximate if drive len varies, but good enough
+    print(f"{margin}{CYAN}╠{'═' * (width - 2)}╣{RESET}")
+    
+    def print_row(label, value, color=WHITE):
+        left_part = f"   {label:<20} : "
+        right_part = f"{value}"
+        total_visible = len(left_part) + len(str(value))
+        padding = width - 2 - total_visible
+        print(f"{margin}{CYAN}║{RESET}{left_part}{color}{right_part}{RESET}{' ' * padding}{CYAN}║{RESET}")
+
+    print_row("Time Elapsed", f"{duration:.2f} seconds", YELLOW)
+    print_row("Total Folders", format_number(stats['folders']), PURPLE)
+    print_row("Total Files", format_number(stats['files']), PURPLE)
+    print_row("Total Data Scanned", f"{stats['scanned_bytes'] / (1024**3):.2f} GB", BLUE)
+
+    print(f"{margin}{CYAN}╠{'═' * (width - 2)}╣{RESET}")
+    print(f"{margin}{CYAN}║{RESET}{' ' * ((width - 2 - 23)//2)}{YELLOW}File Formats Breakdown{RESET}{' ' * ((width - 2 - 23 + 1)//2)}{CYAN}║{RESET}")
+    print(f"{margin}{CYAN}╠{'═' * (width - 2)}╣{RESET}")
     
     if not stats["extensions"]:
-        print("  (No files found)")
+        print(f"{margin}{CYAN}║{RESET}{' ' * ((width - 2 - 16)//2)}{RED}(No files found){RESET}{' ' * ((width - 2 - 16)//2)}{CYAN}║{RESET}")
     else:
         sorted_exts = sorted(stats["extensions"].items(), key=lambda x: x[1], reverse=True)
         for ext, count in sorted_exts:
             display_ext = ext if ext else "[No Extension]"
-            print(f"  {display_ext:<15} : {format_number(count)}")
+            print_row(display_ext, format_number(count), BLUE)
             
-    print("="*50)
-    input("\nPress Enter to exit...")
+    print(f"{margin}{CYAN}╚{'═' * (width - 2)}╝{RESET}")
+    print(f"\n{margin}Press X to return to menu...", end='', flush=True)
+    
+    while True:
+        if msvcrt.kbhit():
+            ch = msvcrt.getch().decode('utf-8').lower()
+            if ch == 'x':
+                break
+        time.sleep(0.05)
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        stop_animation = True
-        print("\n\nScan aborted by user.")
-        sys.exit()
+    main()
