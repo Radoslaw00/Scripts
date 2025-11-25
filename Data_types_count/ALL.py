@@ -31,7 +31,7 @@ def print_menu():
         columns, lines = 80, 24
         
     menu_width = 40
-    menu_height = 13 # Number of lines in the menu
+    menu_height = 14 # Number of lines in the menu
     
     # Calculate padding
     pad_left = max(0, (columns - menu_width) // 2)
@@ -56,6 +56,7 @@ def print_menu():
     print(f"{padding}{CYAN}║   2. {GREEN}Full System Scan{CYAN}                ║{RESET}")
     print(f"{padding}{CYAN}║   3. {GREEN}Select Drive Scan{CYAN}               ║{RESET}")
     print(f"{padding}{CYAN}║   4. {GREEN}Installed Programs{CYAN}              ║{RESET}")
+    print(f"{padding}{CYAN}║   5. {GREEN}Image Converter{CYAN}                 ║{RESET}")
     print(f"{padding}{CYAN}║                                      ║{RESET}")
     print(f"{padding}{CYAN}║   H. {PURPLE}Readme{CYAN}                          ║{RESET}")
     print(f"{padding}{CYAN}║   X. {RED}Quit{CYAN}                            ║{RESET}")
@@ -101,6 +102,9 @@ def main():
         elif key == '4':
             os.system('cls')
             subprocess.run([sys.executable, "programlist.py"])
+        elif key == '5':
+            os.system('cls')
+            subprocess.run([sys.executable, "image_converter.py"])
         elif key == 'h':
             readme_path = os.path.abspath(os.path.join("HTMLREAD", "index.html"))
             if os.path.exists(readme_path):
