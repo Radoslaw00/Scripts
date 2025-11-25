@@ -1,0 +1,219 @@
+#!/usr/bin/env python3
+# -*- coding: cp1250 -*-
+"""
+Skrypt konwertuje wszystkie pliki w tym samym folderze co `p.py` na wybrany format obrazu.
+Pomija plik `p.py` oraz foldery.
+Wymaga zainstalowanej biblioteki Pillow: `pip install pillow`.
+"""
+import sys
+import os
+from pathlib import Path
+import shutil
+
+try:
+    from PIL import Image
+except Exception:
+    print("Biblioteka Pillow nie jest zainstalowana. Zainstaluj j¹: pip install pillow")
+    sys.exit(1)
+
+# Optional color support via colorama for Windows. Fallback to ANSI or no color.
+try:
+    import colorama
+    colorama.init()
+    RESET = colorama.Style.RESET_ALL
+    BRIGHT = colorama.Style.BRIGHT
+    RED = colorama.Fore.RED
+    GREEN = colorama.Fore.GREEN
+    YELLOW = colorama.Fore.YELLOW
+    CYAN = colorama.Fore.CYAN
+    MAGENTA = colorama.Fore.MAGENTA
+    BLUE = colorama.Fore.BLUE
+except Exception:
+    # Minimal ANSI escape sequences (may not work on old Windows terminals)
+    RESET = '\x1b[0m'
+    BRIGHT = '\x1b[1m'
+    RED = '\x1b[31m'
+    GREEN = '\x1b[32m'
+    YELLOW = '\x1b[33m'
+    CYAN = '\x1b[36m'
+    MAGENTA = '\x1b[35m'
+    BLUE = '\x1b[34m'
+
+SUPPORTED = ["webp", "png", "jpg", "jpeg", "bmp", "tiff", "gif"]
+
+# Translations
+TRANSLATIONS = {
+    'pl': {
+        'language_prompt': 'Wybierz jêzyk / Choose the language',
+        'language_options': ['1. Polski', '2. English'],
+        'choose_format': 'Wybierz format docelowy:',
+        'invalid_choice': 'Nieprawid³owy wybór.',
+        'no_files': 'Brak plików do przetworzenia w folderze.',
+        'done': 'Gotowe. Przekonwertowano: {converted}. Pomiñniêto: {skipped}.',
+        'remove_query': 'Czy usun¹æ oryginalne pliki (tak/nie)?',
+        'install_pillow': 'Biblioteka Pillow nie jest zainstalowana. Zainstaluj j¹: pip install pillow',
+        'conversion_error': 'B³¹d konwersji {name}: {err}',
+        'delete_failed': 'Nie uda³o siê usun¹æ {name}: {err}',
+    },
+    'en': {
+        'language_prompt': 'Choose the language / Wybierz jêzyk',
+        'language_options': ['1. English', '2. Polski'],
+        'choose_format': 'Choose target format:',
+        'invalid_choice': 'Invalid choice.',
+        'no_files': 'No files to process in the folder.',
+        'done': 'Done. Converted: {converted}. Skipped: {skipped}.',
+        'remove_query': 'Remove original files (yes/no)?',
+        'install_pillow': 'Pillow is not installed. Install it: pip install pillow',
+        'conversion_error': 'Conversion error {name}: {err}',
+        'delete_failed': 'Failed to delete {name}: {err}',
+    }
+}
+
+LANG = 'pl'
+
+
+def t(key, **kwargs):
+    return TRANSLATIONS[LANG].get(key, key).format(**kwargs)
+
+
+def center_lines_in_box(lines, pad=2):
+    term = shutil.get_terminal_size((80, 20))
+    width = term.columns
+    # determine inner width
+    max_line = max(len(l) for l in lines)
+    inner = max_line + pad * 2
+    box_width = inner + 2  # borders
+    left_pad = max(0, (width - box_width) // 2)
+    # vertical centering (optional)
+    height = term.lines
+    box_height = len(lines) + 2
+    top_pad = max(0, (height - box_height) // 2 - 2)
+
+    out = []
+    out.extend([''] * top_pad)
+    horizontal = '+' + '-' * inner + '+'
+    out.append(' ' * left_pad + horizontal)
+    for l in lines:
+        # center each line in inner width
+        padded = l.center(inner)
+        out.append(' ' * left_pad + '|' + padded + '|')
+    out.append(' ' * left_pad + horizontal)
+    return '\n'.join(out)
+
+
+def choose_language():
+    global LANG
+    lines = [t := TRANSLATIONS['pl']['language_prompt']]
+    opts = TRANSLATIONS['pl']['language_options']
+    lines.extend(opts)
+    box = center_lines_in_box(lines)
+    print(BRIGHT + CYAN + box + RESET)
+
+    choice = input('> ').strip()
+    if choice == '1' or choice.lower().startswith('p'):
+        LANG = 'pl'
+    elif choice == '2' or choice.lower().startswith('e'):
+        LANG = 'en'
+    else:
+        print(RED + (TRANSLATIONS['pl']['invalid_choice']) + RESET)
+        return choose_language()
+
+
+def draw_format_menu():
+    opts = [f"{i}. {f}" for i, f in enumerate(SUPPORTED, start=1)]
+    header = TRANSLATIONS[LANG]['choose_format']
+    lines = [header, ''] + opts
+    box = center_lines_in_box(lines)
+    print(BRIGHT + GREEN + box + RESET)
+
+
+def choose_format():
+    draw_format_menu()
+    choice = input('> ').strip().lower()
+    if choice.isdigit():
+        idx = int(choice) - 1
+        if 0 <= idx < len(SUPPORTED):
+            return SUPPORTED[idx]
+    if choice in SUPPORTED:
+        return choice
+    print(RED + t('invalid_choice') + RESET)
+    return None
+
+
+def convert_file(path: Path, target_ext: str) -> bool:
+    try:
+        with Image.open(path) as img:
+            # Skip if already in target extension
+            if path.suffix.lower() == f'.{target_ext}':
+                return False
+            target_path = path.with_suffix(f'.{target_ext}')
+
+            # JPEG/JPG doesn't support alpha channel
+            if target_ext in ("jpg", "jpeg") and img.mode in ("RGBA", "LA", "P"):
+                img = img.convert("RGB")
+
+            save_params = {}
+            fmt = target_ext.upper()
+            if fmt == 'JPG':
+                fmt = 'JPEG'
+            if fmt == 'WEBP':
+                save_params['quality'] = 90
+
+            img.save(target_path, fmt, **save_params)
+            return True
+    except Exception as e:
+        print(RED + t('conversion_error', name=path.name, err=e) + RESET)
+        return False
+
+
+def main():
+    choose_language()
+
+    target = None
+    while target is None:
+        target = choose_format()
+
+    folder = Path(__file__).resolve().parent
+    files = [p for p in folder.iterdir() if p.is_file() and p.name != Path(__file__).name]
+
+    if not files:
+        print(YELLOW + t('no_files') + RESET)
+        return
+
+    converted = 0
+    skipped = 0
+    for f in files:
+        # attempt to open with PIL to detect image files
+        try:
+            with Image.open(f):
+                pass
+        except Exception:
+            # not an image — skip
+            skipped += 1
+            continue
+
+        if convert_file(f, target):
+            converted += 1
+        else:
+            skipped += 1
+
+    print(BRIGHT + MAGENTA + t('done', converted=converted, skipped=skipped) + RESET)
+
+    ans = input(BLUE + t('remove_query') + ' ' + RESET).strip().lower()
+    if ans in ('tak', 't', 'y', 'yes'):
+        deleted = 0
+        for f in files:
+            if f.suffix.lower() == f'.{target}':
+                continue
+            try:
+                newf = f.with_suffix(f'.{target}')
+                if newf.exists():
+                    f.unlink()
+                    deleted += 1
+            except Exception as e:
+                print(RED + t('delete_failed', name=f.name, err=e) + RESET)
+        print(GREEN + f"Usuniêto {deleted} oryginalnych plików." + RESET)
+
+
+if __name__ == '__main__':
+    main()

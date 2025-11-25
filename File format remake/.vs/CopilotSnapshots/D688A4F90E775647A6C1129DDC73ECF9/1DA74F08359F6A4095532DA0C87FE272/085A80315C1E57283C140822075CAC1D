@@ -1,0 +1,113 @@
+﻿#py
+
+"""
+Skrypt konwertuje wszystkie pliki w tym samym folderze co `p.py` na wybrany format obrazu.
+Pomija plik `p.py` oraz foldery.
+Wymaga zainstalowanej biblioteki Pillow: `pip install pillow`.
+"""
+import sys
+from pathlib import Path
+
+try:
+    from PIL import Image
+except Exception:
+    print("Biblioteka Pillow nie jest zainstalowana. Zainstaluj ją: pip install pillow")
+    sys.exit(1)
+
+SUPPORTED = ["webp", "png", "jpg", "jpeg", "bmp", "tiff", "gif"]
+
+
+def choose_format():
+    print("Wybierz format docelowy:")
+    for i, f in enumerate(SUPPORTED, start=1):
+        print(f"  {i}. {f}")
+    choice = input("Podaj numer formatu (np. 1) lub wpisz nazwę formatu: ").strip().lower()
+    if choice.isdigit():
+        idx = int(choice) - 1
+        if 0 <= idx < len(SUPPORTED):
+            return SUPPORTED[idx]
+    if choice in SUPPORTED:
+        return choice
+    print("Nieprawidłowy wybór.")
+    return None
+
+
+def convert_file(path: Path, target_ext: str) -> bool:
+    try:
+        with Image.open(path) as img:
+            # Skip if already in target extension
+            if path.suffix.lower() == f'.{target_ext}':
+                return False
+            target_path = path.with_suffix(f'.{target_ext}')
+
+            # JPEG/JPG doesn't support alpha channel
+            if target_ext in ("jpg", "jpeg") and img.mode in ("RGBA", "LA", "P"):
+                img = img.convert("RGB")
+
+            # For GIF keep save_all if animated? We'll just save first frame for simplicity
+            save_params = {}
+            fmt = target_ext.upper()
+            if fmt == 'JPG':
+                fmt = 'JPEG'
+            if fmt == 'WEBP':
+                save_params['quality'] = 90
+
+            img.save(target_path, fmt, **save_params)
+            return True
+    except Exception as e:
+        print(f"Błąd konwersji {path.name}: {e}")
+        return False
+
+
+def main():
+    target = None
+    while target is None:
+        target = choose_format()
+
+    folder = Path(__file__).resolve().parent
+    files = [p for p in folder.iterdir() if p.is_file() and p.name != Path(__file__).name]
+
+    if not files:
+        print("Brak plików do przetworzenia w folderze.")
+        return
+
+    converted = 0
+    skipped = 0
+    for f in files:
+        # attempt to open with PIL to detect image files
+        try:
+            with Image.open(f):
+                pass
+        except Exception:
+            # nie obraz — pomiń
+            skipped += 1
+            continue
+
+        if convert_file(f, target):
+            converted += 1
+        else:
+            skipped += 1
+
+    print(f"Gotowe. Przekonwertowano: {converted}. Pomińnięto: {skipped}.")
+
+    # opcjonalne usunięcie oryginałów
+    ans = input("Czy usunąć oryginalne pliki (tak/nie)? ").strip().lower()
+    if ans in ('tak', 't', 'y', 'yes'):
+        deleted = 0
+        for f in files:
+            # nie usuwaj plików, które mają już docelowe rozszerzenie
+            if f.suffix.lower() == f'.{target}':
+                continue
+            try:
+                # usuń tylko jeśli powstał plik docelowy
+                newf = f.with_suffix(f'.{target}')
+                if newf.exists():
+                    f.unlink()
+                    deleted += 1
+            except Exception as e:
+                print(f"Nie udało się usunąć {f.name}: {e}")
+        print(f"Usunięto {deleted} oryginalnych plików.")
+
+
+if __name__ == '__main__':
+    main()
