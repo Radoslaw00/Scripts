@@ -6,6 +6,8 @@
 #include <unistd.h>
 #include <windows.h>
 #include <ctype.h>
+#include <pthread.h>
+#include <time.h>
 
 #define TARGET_FORMAT "webp"
 #define RESIZE_WIDTH 1000
@@ -13,6 +15,24 @@
 #define MAX_SKIP_FILES 10
 #define QUALITY_HIGH 90
 #define QUALITY_LOW 75
+#define MAX_FILES 10000
+#define THREAD_COUNT 8
+#define BATCH_SIZE 32
+
+// Thread-safe file queue
+typedef struct {
+    char paths[MAX_FILES][MAX_PATH_LEN];
+    int count;
+    pthread_mutex_t lock;
+} FileQueue;
+
+// Cache for directory listings
+typedef struct {
+    char path[MAX_PATH_LEN];
+    char **files;
+    int count;
+    time_t cached_time;
+} DirCache;
 
 typedef struct {
     char names[MAX_SKIP_FILES][256];
@@ -23,6 +43,12 @@ typedef struct {
     char filename[256];
     char ext[50];
 } FileInfo;
+
+typedef struct {
+    char src[MAX_PATH_LEN];
+    char dst[MAX_PATH_LEN];
+    int type; // 0=convert, 1=resize, 2=optimize
+} ImageTask;
 
 // Initialize skip files list
 SkipFiles init_skip_files() {
@@ -40,14 +66,27 @@ SkipFiles init_skip_files() {
     return skip;
 }
 
-// Check if file should be skipped
-int should_skip(const char *filename, SkipFiles *skip) {
+// Global task queue for parallel processing
+FileQueue *g_task_queue = NULL;
+int g_processed = 0;
+int g_total = 0;
+pthread_mutex_t g_progress_lock = PTHREAD_MUTEX_INITIALIZER;
+
+// Fast string comparison (hash-based skip check)
+int should_skip_fast(const char *filename, SkipFiles *skip) {
+    unsigned int len = strlen(filename);
+    // Quick length check first
     for (int i = 0; i < skip->count; i++) {
-        if (strcmp(filename, skip->names[i]) == 0) {
+        if (strlen(skip->names[i]) == len && strcmp(filename, skip->names[i]) == 0) {
             return 1;
         }
     }
     return 0;
+}
+
+// Check if file should be skipped
+int should_skip(const char *filename, SkipFiles *skip) {
+    return should_skip_fast(filename, skip);
 }
 
 // Get file extension
@@ -76,6 +115,20 @@ void get_extension_lower(const char *filename, char *ext) {
     }
 }
 
+// Fast image extension check (inline for speed)
+static inline int is_image_ext(const char *ext) {
+    switch(ext[0]) {
+        case 'j': return (strcmp(ext, "jpg") == 0 || strcmp(ext, "jpeg") == 0);
+        case 'p': return (strcmp(ext, "png") == 0);
+        case 'b': return (strcmp(ext, "bmp") == 0);
+        case 'g': return (strcmp(ext, "gif") == 0);
+        case 't': return (strcmp(ext, "tiff") == 0);
+        case 'w': return (strcmp(ext, "webp") == 0);
+        case 'i': return (strcmp(ext, "ico") == 0);
+        default: return 0;
+    }
+}
+
 // Check if file exists
 int file_exists(const char *path) {
     return access(path, F_OK) != -1;
@@ -101,14 +154,7 @@ void create_directory_if_not_exists(const char *path) {
 int is_image_file(const char *filename) {
     char ext[50] = {0};
     get_extension_lower(filename, ext);
-    
-    const char *image_exts[] = {"jpg", "jpeg", "png", "bmp", "gif", "tiff", "webp", "ico", 0};
-    for (int i = 0; image_exts[i]; i++) {
-        if (strcmp(ext, image_exts[i]) == 0) {
-            return 1;
-        }
-    }
-    return 0;
+    return is_image_ext(ext);
 }
 
 // Sort files by extension
