@@ -10,13 +10,14 @@ from collections import defaultdict
 import time
 
 TARGET_FORMAT = "webp"
+OUTPUT_FORMATS = ["webp", "png", "jpg", "bmp", "tiff", "gif", "ico", "avif", "heic"]
 RESIZE_WIDTH = 1000
 SKIP_FILES = {"run.py", "Sort_folder_filetypes.py", "p.py", "x.bat", ".sort_backup.json", "readme.md", "run.c", "run.exe"}
 MAX_WORKERS = 8  # Parallel threads
 CHUNK_SIZE = 32  # Process files in batches
 
 # Image extensions cache
-IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.bmp', '.gif', '.tiff', '.webp', '.ico'}
+IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.bmp', '.gif', '.tiff', '.webp', '.ico', '.avif', '.heic', '.heif'}
 
 # Thread-safe progress counter
 progress_lock = threading.Lock()
@@ -54,8 +55,46 @@ def convert_to_webp_worker(file_path):
     except Exception as e:
         return None
 
+def convert_to_format_worker(file_path, target_fmt):
+    """Worker function for parallel format conversion."""
+    try:
+        if file_path.suffix.lower() == f'.{target_fmt}':
+            return None
+        
+        with Image.open(file_path) as img:
+            target_path = file_path.with_suffix(f'.{target_fmt}')
+            
+            # Handle RGBA for formats that don't support transparency
+            if target_fmt in ("jpg", "jpeg", "bmp") and img.mode in ("RGBA", "LA", "P"):
+                img = img.convert("RGB")
+            elif target_fmt == "ico" and img.mode == "RGBA":
+                pass  # ICO supports RGBA
+            elif img.mode == "P":
+                img = img.convert("RGBA")
+            
+            # Format-specific quality settings
+            save_params = {}
+            fmt_upper = target_fmt.upper()
+            if fmt_upper == "JPG":
+                fmt_upper = "JPEG"
+            
+            if fmt_upper == "WEBP":
+                save_params['quality'] = 90
+                save_params['method'] = 6
+            elif fmt_upper == "JPEG":
+                save_params['quality'] = 90
+            elif fmt_upper == "PNG":
+                save_params['optimize'] = True
+            elif fmt_upper == "AVIF":
+                save_params['quality'] = 85
+            
+            img.save(target_path, fmt_upper, **save_params)
+            return target_path
+    except Exception as e:
+        return None
+
 def convert_to_webp():
-    """Convert all images to WebP using parallel processing."""
+    """Convert all images to WebP and other formats using parallel processing."""
     print("Converting images to WebP...")
     folder = Path.cwd()
     files_to_process = [f for f in folder.iterdir() 
@@ -70,6 +109,31 @@ def convert_to_webp():
             result = future.result()
             if result:
                 print(f"  Converted: {futures[future].name} -> {result.name}")
+
+def convert_to_all_formats():
+    """Convert images to all supported formats."""
+    folder = Path.cwd()
+    
+    for fmt in OUTPUT_FORMATS:
+        if fmt == "webp":
+            continue  # Already done
+        
+        print(f"Converting to {fmt.upper()}...")
+        files_to_process = [f for f in folder.iterdir() 
+                           if f.is_file() and f.name not in SKIP_FILES and is_image_file(f)]
+        
+        if not files_to_process:
+            continue
+        
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            futures = {executor.submit(convert_to_format_worker, f, fmt): f for f in files_to_process}
+            converted = 0
+            for future in as_completed(futures):
+                result = future.result()
+                if result:
+                    converted += 1
+            if converted > 0:
+                print(f"  Converted {converted} files to {fmt.upper()}")
 
 def sort_by_extension():
     """Sort all files into folders by extension (optimized with caching)."""
@@ -243,6 +307,7 @@ if __name__ == '__main__':
     start_time = time.time()
     
     convert_to_webp()
+    convert_to_all_formats()
     sort_by_extension()
     resize_images()
     optimize_images()
